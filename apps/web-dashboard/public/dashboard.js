@@ -195,10 +195,21 @@
 
     // Attach eject actions
     document.querySelectorAll('.btn-eject').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('click', async (e) => {
         const studentId = e.target.getAttribute('data-id');
+        if (!activeSession) return;
         if (confirm('Eject this student from the active class session?')) {
-          // Send eject command
+          try {
+            const res = await fetch(`/api/v1/sessions/${activeSession.id}/roster/${studentId}/eject`, {
+              method: 'POST'
+            });
+            if (!res.ok) {
+              const err = await res.json();
+              alert('Error ejecting: ' + (err.error || 'Failed'));
+            }
+          } catch (err) {
+            alert('Network error ejecting student: ' + err.message);
+          }
         }
       });
     });

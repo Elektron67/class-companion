@@ -2,6 +2,7 @@
 
 export type FocusState = 'FOCUSED' | 'UNFOCUSED' | 'HIDDEN';
 export type ConnectionStatus = 'CONNECTED' | 'UNKNOWN' | 'DISCONNECTED';
+export type CallState = 'LOBBY' | 'IN_CALL' | 'LEFT_CALL' | 'UNKNOWN';
 export type SessionStatus = 'ACTIVE' | 'ENDED';
 export type CheckStatus = 'OPEN' | 'FINALIZED';
 
@@ -31,6 +32,7 @@ export interface StudentRosterEntry {
   isDuplicateName?: boolean;
   connectionStatus: ConnectionStatus;
   focusState: FocusState;
+  callState?: CallState;
   afkUsesConsumed: number; // Max 3
   afkExpiresAt?: number | null; // Unix timestamp ms
   lastHeartbeatAt: number;
@@ -72,12 +74,27 @@ export interface CheckSummary {
   nonResponders?: string[]; // Revealed only when requested
 }
 
+export interface AttendanceExportRecord {
+  displayName: string;
+  isDuplicateName: boolean;
+  joinedAt: string;
+  totalChecks: number;
+  responded: number;
+  didNotRespond: number;
+  excusedAFK: number;
+  participationRatePercent: number;
+  afkUsesConsumed: number;
+  finalConnectionStatus: string;
+  finalFocusState: string;
+}
+
 // Client-to-Server WebSocket payloads
 export type UpstreamMessage =
   | {
       type: 'telemetry:update';
       payload: {
         focusState: FocusState;
+        callState?: CallState;
         inCall: boolean;
         clientTimestamp: number;
       };
@@ -161,6 +178,12 @@ export type DownstreamMessage =
       };
     }
   | {
+      event: 'session:ejected';
+      payload: {
+        message: string;
+      };
+    }
+  | {
       event: 'pong';
     };
 
@@ -173,4 +196,3 @@ export interface StudentClassNote {
   markdownContent: string;
   lastSavedAt: number;
 }
-

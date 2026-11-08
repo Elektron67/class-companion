@@ -407,7 +407,7 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          joinCode: 'RECONN', // Bypass code lookup on valid guestToken
+          joinCode: result.currentGuestSession.joinCode || '',
           meetingCode,
           studentName: result.currentGuestSession.studentName,
           guestToken: result.currentGuestSession.guestToken
@@ -431,6 +431,7 @@
     chrome.storage.local.set({
       currentGuestSession: {
         sessionId: session.id,
+        joinCode: session.joinCode,
         guestToken: guest.guestToken,
         meetingCode,
         studentName: guest.displayName,
@@ -446,27 +447,15 @@
     initTelemetry();
   }
 
-  // 8. WebSocket Connection
+  // 8. WebSocket Connection with Service Worker CSP-Immunity Fallback
+  let swPort = null;
+
   function initWebSocket(guestToken) {
-    if (socket) socket.close();
-    socket = new WebSocket(`${WS_BASE}/ws?role=student&guestToken=${guestToken}`);
+    const wsUrl = `${WS_BASE}/ws?role=student&guestToken=${guestToken}`;
 
-    socket.onopen = () => {
-      console.log('[MeetMonitor] WebSocket connected.');
-      sendTelemetry();
-
-      // Start periodic heartbeat ping (every 5 seconds)
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
-      heartbeatTimer = setInterval(() => {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: 'ping' }));
-        }
-      }, 5000);
-    };
-
-    socket.onmessage = (event) => {
+    function handleIncomingMessage(rawText) {
       try {
-        const msg = JSON.parse(event.data);
+        const msg = JSON.parse(rawText);
         if (msg.event === 'check:started') {
           handleCheckStarted(msg.payload);
         } else if (msg.event === 'check:ack') {
@@ -476,20 +465,98 @@
         } else if (msg.event === 'session:ended') {
           dockLabel.textContent = 'Class Session Ended';
           dockDot.classList.remove('active');
-          if (socket) socket.close();
+          closeActiveConnection();
+        } else if (msg.event === 'session:ejected') {
+          dockLabel.textContent = 'Removed by Instructor';
+          dockDot.classList.remove('active');
+          alert('You have been removed from this class session by the instructor.');
+          closeActiveConnection();
         }
       } catch (err) {
         console.error('Error parsing WS message:', err);
       }
-    };
+    }
 
-    socket.onclose = () => {
-      dockDot.classList.remove('active');
-      dockLabel.textContent = `${currentSession?.title || 'Class'} (Reconnecting...)`;
-      setTimeout(() => {
-        if (currentGuest) initWebSocket(currentGuest.guestToken);
-      }, 3000);
-    };
+    function closeActiveConnection() {
+      if (socket) {
+        try { socket.close(); } catch (e) {}
+        socket = null;
+      }
+      if (swPort) {
+        try { swPort.postMessage({ action: 'CLOSE_WS' }); } catch (e) {}
+        swPort.disconnect();
+        swPort = null;
+      }
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+    }
+
+    // Try direct WebSocket first, fallback to Service Worker port on CSP error
+    try {
+      if (socket) socket.close();
+      socket = new WebSocket(wsUrl);
+
+      socket.onopen = () => {
+        console.log('[MeetMonitor] Direct WebSocket connected.');
+        onSocketConnected();
+      };
+
+      socket.onmessage = (event) => {
+        handleIncomingMessage(event.data);
+      };
+
+      socket.onerror = () => {
+        console.warn('[MeetMonitor] Direct WebSocket blocked (likely page CSP). Switching to Service Worker bridge...');
+        connectViaServiceWorker(wsUrl);
+      };
+
+      socket.onclose = () => {
+        dockDot.classList.remove('active');
+        dockLabel.textContent = `${currentSession?.title || 'Class'} (Reconnecting...)`;
+      };
+    } catch (e) {
+      connectViaServiceWorker(wsUrl);
+    }
+
+    function connectViaServiceWorker(url) {
+      if (swPort) {
+        try { swPort.disconnect(); } catch (e) {}
+      }
+
+      swPort = chrome.runtime.connect({ name: 'meetmonitor-stream' });
+      swPort.postMessage({ action: 'CONNECT_WS', wsUrl: url });
+
+      swPort.onMessage.addListener((msg) => {
+        if (msg.type === 'WS_OPEN') {
+          console.log('[MeetMonitor] Bridge WebSocket connected via Service Worker.');
+          onSocketConnected();
+        } else if (msg.type === 'WS_MESSAGE') {
+          handleIncomingMessage(msg.data);
+        } else if (msg.type === 'WS_CLOSE') {
+          dockDot.classList.remove('active');
+          dockLabel.textContent = `${currentSession?.title || 'Class'} (Reconnecting...)`;
+        }
+      });
+    }
+
+    function onSocketConnected() {
+      dockDot.classList.add('active');
+      dockLabel.textContent = `${currentSession?.title || 'Class'} (Connected)`;
+      sendTelemetry();
+
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      heartbeatTimer = setInterval(() => {
+        sendWsMessage({ type: 'ping' });
+      }, 5000);
+    }
+  }
+
+  function sendWsMessage(obj) {
+    const raw = JSON.stringify(obj);
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(raw);
+    } else if (swPort) {
+      swPort.postMessage({ action: 'SEND_WS', data: raw });
+    }
   }
 
   // 9. Telemetry & Focus Monitoring
@@ -500,8 +567,6 @@
   }
 
   function sendTelemetry() {
-    if (!socket || socket.readyState !== WebSocket.OPEN) return;
-
     let focusState = 'FOCUSED';
     if (document.visibilityState === 'hidden') {
       focusState = 'HIDDEN';
@@ -509,14 +574,14 @@
       focusState = 'UNFOCUSED';
     }
 
-    socket.send(JSON.stringify({
+    sendWsMessage({
       type: 'telemetry:update',
       payload: {
         focusState,
         inCall: true,
         clientTimestamp: Date.now()
       }
-    }));
+    });
   }
 
   // 10. Participation Check Execution
@@ -561,17 +626,17 @@
 
   checkForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!activeCheck || !socket) return;
+    if (!activeCheck) return;
 
     const answer = inputCheckAnswer.value;
-    socket.send(JSON.stringify({
+    sendWsMessage({
       type: 'check:submit',
       payload: {
         checkId: activeCheck.checkId,
         inputPhrase: answer,
         submissionId: String(Date.now())
       }
-    }));
+    });
   });
 
   function handleCheckAck(payload) {
@@ -602,13 +667,13 @@
 
   // 11. AFK Break Handling
   btnToggleAfk.addEventListener('click', () => {
-    if (!socket || !currentGuest) return;
+    if (!currentGuest) return;
     const isCurrentlyAfk = btnToggleAfk.textContent === "I'm Back";
 
-    socket.send(JSON.stringify({
+    sendWsMessage({
       type: 'afk:request',
       payload: { action: isCurrentlyAfk ? 'END' : 'START' }
-    }));
+    });
   });
 
   function handleAfkAck(payload) {

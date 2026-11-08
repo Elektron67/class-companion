@@ -172,12 +172,11 @@ describe('E2E Vertical Slice: Instructor Dashboard to Student Extension', () => 
       finalSummary.respondedCount + finalSummary.didNotRespondCount + finalSummary.excusedCount
     );
 
-    // 12. Student 2 refreshes/reconnects with guestToken
+    // 12. Student 2 refreshes/reconnects using only guestToken (without joinCode)
     const reconnectRes = await fetch(`${baseUrl}/api/v1/sessions/join`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        joinCode: session.joinCode,
         meetingCode: 'abc-defg-hij',
         studentName: 'Bob Dylan',
         guestToken: student2Data.guest.guestToken
@@ -189,10 +188,25 @@ describe('E2E Vertical Slice: Instructor Dashboard to Student Extension', () => 
     assert.equal(reconnectData.guest.id, student2Data.guest.id);
 
     // Verify roster size is still exactly 2 (no duplicate entry created)
-    const roster = app.rosterService.getRosterForSession(session.id);
+    let roster = app.rosterService.getRosterForSession(session.id);
     assert.equal(roster.length, 2);
 
-    // 13. Clean up sockets
+    // 13. Instructor ejects Student 1 (Alice Walker)
+    const ejectRes = await fetch(`${baseUrl}/api/v1/sessions/${session.id}/roster/${student1Data.guest.id}/eject`, {
+      method: 'POST'
+    });
+    assert.equal(ejectRes.status, 200);
+    await new Promise((r) => setTimeout(r, 50));
+
+    const ejectMsg = student1Messages.find(m => m.event === 'session:ejected');
+    assert.ok(ejectMsg);
+    assert.match(ejectMsg.payload.message, /removed/i);
+
+    roster = app.rosterService.getRosterForSession(session.id);
+    assert.equal(roster.length, 1);
+    assert.equal(roster[0].displayName, 'Bob Dylan');
+
+    // 14. Clean up sockets
     student1Ws.close();
     student2Ws.close();
     instructorWs.close();

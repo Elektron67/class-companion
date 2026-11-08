@@ -121,22 +121,42 @@ export class AppServer {
       // 2. Join Session: POST /api/v1/sessions/join
       if (method === 'POST' && url.pathname === '/api/v1/sessions/join') {
         const body = await this.readJsonBody(req);
-        if (!body.joinCode || !body.meetingCode || !body.studentName) {
-          return sendJson(400, { error: 'JOIN_CODE_MEETING_CODE_AND_NAME_REQUIRED' });
+        if (!body.meetingCode || !body.studentName) {
+          return sendJson(400, { error: 'MEETING_CODE_AND_NAME_REQUIRED' });
         }
 
-        const session = this.sessionService.getSessionByJoinCode(body.joinCode);
-        if (!session) {
-          return sendJson(404, { code: 'INVALID_JOIN_CODE', message: 'Join code is invalid or session has ended.' });
-        }
-
-        // Validate Google Meet match: Reject attempts on a different Google Meet meeting
         const normalizedInputMeet = this.sessionService.normalizeMeetingCode(body.meetingCode);
-        if (normalizedInputMeet !== session.meetingCode) {
-          return sendJson(403, {
-            code: 'MEETING_MISMATCH',
-            message: `This join code is registered for Google Meet (${session.meetingCode}), not (${normalizedInputMeet}).`
-          });
+        let session = null;
+
+        // Path A: Reconnection with existing guestToken
+        if (body.guestToken) {
+          const existingGuest = this.rosterService.getGuestByToken(body.guestToken);
+          if (existingGuest) {
+            const guestSession = this.sessionService.getSessionById(existingGuest.sessionId);
+            if (guestSession && guestSession.status === 'ACTIVE') {
+              if (guestSession.meetingCode === normalizedInputMeet) {
+                session = guestSession;
+              }
+            }
+          }
+        }
+
+        // Path B: New Join or fallback via joinCode
+        if (!session) {
+          if (!body.joinCode) {
+            return sendJson(400, { error: 'JOIN_CODE_REQUIRED' });
+          }
+          session = this.sessionService.getSessionByJoinCode(body.joinCode);
+          if (!session) {
+            return sendJson(404, { code: 'INVALID_JOIN_CODE', message: 'Join code is invalid or session has ended.' });
+          }
+
+          if (normalizedInputMeet !== session.meetingCode) {
+            return sendJson(403, {
+              code: 'MEETING_MISMATCH',
+              message: `This join code is registered for Google Meet (${session.meetingCode}), not (${normalizedInputMeet}).`
+            });
+          }
         }
 
         const { guest, isReconnection } = this.rosterService.joinOrReconnect(
@@ -156,7 +176,8 @@ export class AppServer {
           session: {
             id: session.id,
             title: session.title,
-            meetingCode: session.meetingCode
+            meetingCode: session.meetingCode,
+            joinCode: session.joinCode
           },
           guest,
           isReconnection
@@ -286,6 +307,35 @@ export class AppServer {
         });
 
         return sendJson(200, session);
+      }
+
+      // 7. Eject Guest: POST /api/v1/sessions/:id/roster/:guestId/eject
+      const ejectMatch = url.pathname.match(/^\/api\/v1\/sessions\/([^/]+)\/roster\/([^/]+)\/eject$/);
+      if (method === 'POST' && ejectMatch) {
+        const sessionId = ejectMatch[1];
+        const guestId = ejectMatch[2];
+        const guest = this.rosterService.getGuestById(guestId);
+
+        if (guest) {
+          const ws = this.studentSockets.get(guest.guestToken);
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              event: 'session:ejected',
+              payload: { message: 'You have been removed from this class session by the instructor.' }
+            }));
+            ws.close(4003, 'EJECTED_BY_INSTRUCTOR');
+          }
+          this.studentSockets.delete(guest.guestToken);
+        }
+
+        const success = this.rosterService.ejectGuest(sessionId, guestId);
+        const updatedRoster = this.rosterService.getRosterForSession(sessionId);
+        this.broadcastToInstructors(sessionId, {
+          event: 'roster:update',
+          payload: { students: updatedRoster }
+        });
+
+        return sendJson(200, { success });
       }
 
       // Not found

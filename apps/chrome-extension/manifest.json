@@ -5,12 +5,18 @@
   "description": "Monitors class participation, supports 20s checks, AFK breaks, and private notes on Google Meet.",
   "permissions": [
     "storage",
-    "notifications"
+    "notifications",
+    "tabs"
   ],
   "host_permissions": [
     "https://meet.google.com/*",
     "http://localhost:4000/*"
   ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "background": {
     "service_worker": "src/background/service-worker.js"
   },
@@ -23,7 +29,10 @@
   ],
   "action": {
     "default_popup": "src/popup/popup.html",
-    "default_title": "MeetMonitor Student Companion"
+    "default_title": "MeetMonitor Student Companion",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
   }
 }
-
