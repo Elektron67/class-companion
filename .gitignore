@@ -1,5 +1,5 @@
 node_modules/
 apps/backend/data/
+dist/
 *.log
 .DS_Store
-

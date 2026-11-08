@@ -5,14 +5,17 @@
   "type": "module",
   "scripts": {
     "test": "node --test --experimental-strip-types packages/string-normalizer/tests/normalizer.test.ts apps/backend/tests/*.test.ts",
-    "start:backend": "node --experimental-strip-types apps/backend/src/server.ts"
+    "start:backend": "node --experimental-strip-types apps/backend/src/server.ts",
+    "bundle:extension": "node scripts/bundle-extension.js"
   },
   "dependencies": {
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@types/archiver": "^8.0.0",
     "@types/node": "^26.6.6",
     "@types/ws": "^8.18.2",
+    "archiver": "^8.0.0",
     "typescript": "^7.0.2"
   }
 }

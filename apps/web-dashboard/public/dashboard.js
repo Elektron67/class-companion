@@ -187,10 +187,36 @@
         <td>${afkLabel}</td>
         <td>${new Date(s.joinedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
         <td>
+          <button class="btn btn-xs btn-secondary btn-rename" data-id="${s.id}" data-name="${escapeHtml(s.displayName)}" style="margin-right:6px;">Rename</button>
           <button class="btn btn-xs btn-danger-outline btn-eject" data-id="${s.id}">Eject</button>
         </td>
       `;
       rosterTableBody.appendChild(tr);
+    });
+
+    // Attach rename actions
+    document.querySelectorAll('.btn-rename').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const studentId = e.target.getAttribute('data-id');
+        const oldName = e.target.getAttribute('data-name');
+        if (!activeSession) return;
+        const newName = prompt('Enter corrected name for student:', oldName);
+        if (!newName || newName.trim() === oldName) return;
+
+        try {
+          const res = await fetch(`/api/v1/sessions/${activeSession.id}/roster/${studentId}/rename`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ displayName: newName.trim() })
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            alert('Error renaming: ' + (err.error || 'Failed'));
+          }
+        } catch (err) {
+          alert('Network error renaming student: ' + err.message);
+        }
+      });
     });
 
     // Attach eject actions
@@ -318,7 +344,18 @@
     }
   });
 
-  // 5. End Session
+  // 5. CSV Export & End Session
+  function triggerCsvDownload() {
+    if (!activeSession) return;
+    window.location.href = `/api/v1/sessions/${activeSession.id}/export`;
+  }
+
+  const btnExportCsvNav = document.getElementById('btnExportCsvNav');
+  if (btnExportCsvNav) btnExportCsvNav.addEventListener('click', triggerCsvDownload);
+
+  const btnExportCsvSummary = document.getElementById('btnExportCsvSummary');
+  if (btnExportCsvSummary) btnExportCsvSummary.addEventListener('click', triggerCsvDownload);
+
   btnEndSession.addEventListener('click', async () => {
     if (!confirm('End this class session? Student monitoring will immediately stop.')) return;
     try {
@@ -337,6 +374,9 @@
     activeDashboardView.classList.add('hidden');
     sessionStatusHeader.classList.add('hidden');
     sessionEndedView.classList.remove('hidden');
+
+    const summaryTotalStudents = document.getElementById('summaryTotalStudents');
+    if (summaryTotalStudents) summaryTotalStudents.textContent = rosterCount.textContent;
   }
 
   btnNewSession.addEventListener('click', () => {
