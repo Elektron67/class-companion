@@ -46,3 +46,4 @@ describe('String Normalizer & Phrase Matcher', () => {
     assert.equal(phrasesMatch('Phase 1', 'Phase 2'), false);
   });
 });
+

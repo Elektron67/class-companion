@@ -82,3 +82,4 @@ npm test
 - **Roster & Telemetry:** Guest token reconnection, duplicate name detection with visual disambiguation (`Alice Smith #2`), and heartbeat timeout sweeping to `UNKNOWN`.
 - **AFK Boundary Engine:** 3-break allocation limit, early return with use forfeiture, check-in-progress lock, and retroactive excuse protection.
 - **Participation Engine:** Authoritative 20-second deadline enforcement, retry support for incorrect attempts, duplicate rejection, and strict mathematical reconciliation ($\text{Snapshot Total} = \text{Responded} + \text{Did Not Respond} + \text{Excused}$).
+

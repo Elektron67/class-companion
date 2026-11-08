@@ -24,3 +24,4 @@ export function normalizePhrase(input: string | null | undefined): string {
 export function phrasesMatch(inputA: string, inputB: string): boolean {
   return normalizePhrase(inputA) === normalizePhrase(inputB);
 }
+

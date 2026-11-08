@@ -173,3 +173,4 @@ export interface StudentClassNote {
   markdownContent: string;
   lastSavedAt: number;
 }
+

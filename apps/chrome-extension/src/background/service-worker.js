@@ -32,3 +32,4 @@ chrome.notifications.onClicked.addListener((notificationId) => {
     chrome.notifications.clear(notificationId);
   }
 });
+
