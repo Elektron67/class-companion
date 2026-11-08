@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "MeetMonitor - Student Companion",
+  "version": "1.0.0",
+  "description": "Monitors class participation, supports 20s checks, AFK breaks, and private notes on Google Meet.",
+  "permissions": [
+    "storage",
+    "notifications"
+  ],
+  "host_permissions": [
+    "https://meet.google.com/*",
+    "http://localhost:4000/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["src/content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_title": "MeetMonitor Student Companion"
+  }
+}

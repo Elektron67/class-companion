@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MeetMonitor - Instructor Class Dashboard</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎓</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <!-- Navigation Bar -->
+    <header class="navbar">
+      <div class="nav-brand">
+        <span class="logo-icon">🎓</span>
+        <h1>MeetMonitor <span class="badge-role">Instructor</span></h1>
+      </div>
+      <div id="sessionStatusHeader" class="nav-status hidden">
+        <span class="status-indicator live"></span>
+        <span id="sessionStatusText">SESSION LIVE</span>
+        <button id="btnEndSession" class="btn btn-danger-outline btn-sm">End Class</button>
+      </div>
+    </header>
+
+    <main class="container">
+      <!-- State 1: Create Session View -->
+      <section id="createSessionView" class="card fade-in">
+        <h2>Start a Monitored Class Session</h2>
+        <p class="subtitle">Create an ephemeral session associated with your Google Meet call. Students join with a temporary 6-character code.</p>
+        
+        <form id="createSessionForm" class="form-grid">
+          <div class="form-group">
+            <label for="inputTitle">Class Title</label>
+            <input type="text" id="inputTitle" placeholder="e.g. Molecular Biology - Lecture 4" required />
+          </div>
+
+          <div class="form-group">
+            <label for="inputMeet">Google Meet URL or Meeting Code</label>
+            <input type="text" id="inputMeet" placeholder="https://meet.google.com/abc-defg-hij or abc-defg-hij" required />
+            <span class="field-hint">Must match the standard Google Meet format: xxx-yyyy-zzz</span>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" id="btnCreate" class="btn btn-primary">Start Class Session</button>
+          </div>
+        </form>
+      </section>
+
+      <!-- State 2: Active Session Dashboard -->
+      <section id="activeDashboardView" class="hidden fade-in">
+        <!-- Top Session Banner -->
+        <div class="dashboard-header-card">
+          <div class="header-left">
+            <h2 id="displayClassTitle">Class Title</h2>
+            <div class="meet-meta">
+              <span class="meta-item">Meeting: <a id="displayMeetLink" href="#" target="_blank" class="link-meet">meet.google.com/xxx-yyyy-zzz</a></span>
+              <span class="meta-item">Started: <span id="displayStartTime">--:--</span></span>
+            </div>
+          </div>
+          <div class="header-right">
+            <div class="join-code-badge">
+              <span class="label">STUDENT JOIN CODE</span>
+              <div class="code-row">
+                <span id="displayJoinCode" class="code">------</span>
+                <button id="btnCopyCode" class="btn-icon" title="Copy Join Code">📋</button>
+              </div>
+              <span class="code-sub">Students enter this in the Chrome extension</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Participation Check Trigger Box -->
+        <div class="card check-control-card">
+          <div class="check-control-header">
+            <h3>⚡ 20-Second Participation Check</h3>
+            <span class="check-rule-hint">Students have exactly 20s to type the phrase. Server-authoritative timer.</span>
+          </div>
+
+          <form id="triggerCheckForm" class="check-form">
+            <div class="check-input-row">
+              <input type="text" id="inputTargetPhrase" placeholder="Enter target phrase (e.g. Mitochondria, Cell Division)" required />
+              <button type="submit" id="btnTriggerCheck" class="btn btn-warning">Trigger 20s Check</button>
+            </div>
+          </form>
+
+          <!-- Live Check Progress (Visible when check is running or just completed) -->
+          <div id="checkProgressBanner" class="check-progress-banner hidden">
+            <div class="progress-meta">
+              <div class="progress-title-col">
+                <span class="label-upper">Target Phrase</span>
+                <strong id="displayActivePhrase" class="active-phrase">"---"</strong>
+              </div>
+              <div class="timer-col">
+                <span id="checkTimerCountdown" class="countdown-digits">20s</span>
+                <span id="checkTimerStatus" class="timer-label">WINDOW OPEN</span>
+              </div>
+            </div>
+
+            <!-- Stats Ticker -->
+            <div class="check-stats-grid">
+              <div class="stat-pill responded">
+                <span class="num" id="statResponded">0</span>
+                <span class="lbl">Responded</span>
+              </div>
+              <div class="stat-pill pending">
+                <span class="num" id="statPending">0</span>
+                <span class="lbl">Pending</span>
+              </div>
+              <div class="stat-pill excused">
+                <span class="num" id="statExcused">0</span>
+                <span class="lbl">Excused (AFK)</span>
+              </div>
+              <div class="stat-pill missed">
+                <span class="num" id="statDidNotRespond">0</span>
+                <span class="lbl">Did Not Respond</span>
+              </div>
+              <div class="stat-pill total">
+                <span class="num" id="statSnapshotTotal">0</span>
+                <span class="lbl">Snapshot Total</span>
+              </div>
+            </div>
+
+            <div class="reconciliation-explainer">
+              <span class="math-eq">Snapshot Total ( <span id="mathSnap">0</span> ) = Responded ( <span id="mathResp">0</span> ) + Missed ( <span id="mathMiss">0</span> ) + Excused ( <span id="mathExc">0</span> )</span>
+              <button id="btnToggleNonResponders" class="btn btn-link btn-xs">Reveal Non-Responders</button>
+            </div>
+
+            <!-- Revealed Non-Responders Dropdown -->
+            <div id="nonRespondersPanel" class="non-responders-panel hidden">
+              <strong>Students who did not respond:</strong>
+              <ul id="nonRespondersList"></ul>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Roster Table -->
+        <div class="card roster-card">
+          <div class="roster-header">
+            <h3>Live Class Roster (<span id="rosterCount">0</span> Students)</h3>
+            <div class="roster-filters">
+              <span class="telemetry-legend">
+                <span class="dot focused">●</span> Meet focused
+                <span class="dot unfocused">◐</span> Meet not focused
+                <span class="dot hidden-state">○</span> Meet hidden
+                <span class="dot disconnected">◌</span> Disconnected
+              </span>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="roster-table">
+              <thead>
+                <tr>
+                  <th>Student Display Name</th>
+                  <th>Connection</th>
+                  <th>Google Meet Focus State</th>
+                  <th>AFK Status</th>
+                  <th>Joined</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="rosterTableBody">
+                <tr class="empty-row">
+                  <td colspan="6">Waiting for students to join with code <strong id="emptyJoinCode">------</strong>...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- State 3: Session Ended Summary -->
+      <section id="sessionEndedView" class="card hidden fade-in">
+        <h2>Class Session Ended</h2>
+        <p class="subtitle">The class session is closed. Student monitoring has ceased. You can export the attendance records.</p>
+        <div class="session-summary-box">
+          <p><strong>Total Students Enrolled:</strong> <span id="summaryTotalStudents">0</span></p>
+          <p><strong>Total Participation Checks Conducted:</strong> <span id="summaryTotalChecks">0</span></p>
+        </div>
+        <div class="form-actions">
+          <button id="btnNewSession" class="btn btn-primary">Start Another Class</button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/dashboard.js"></script>
+</body>
+</html>
