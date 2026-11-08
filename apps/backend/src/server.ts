@@ -12,7 +12,7 @@ import type {
   UpstreamMessage,
   DownstreamMessage,
   CheckSummary
-} from '../../packages/shared-types/src/types.ts';
+} from '../../../packages/shared-types/src/types.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -200,6 +200,78 @@ export class AppServer {
           roster,
           activeCheck: checkSummary
         });
+      }
+
+      // 3b. Export Session Attendance CSV: GET /api/v1/sessions/:id/export
+      const exportMatch = url.pathname.match(/^\/api\/v1\/sessions\/([^/]+)\/export$/);
+      if (method === 'GET' && exportMatch) {
+        const sessionId = exportMatch[1];
+        const session = this.sessionService.getSessionById(sessionId);
+        if (!session) return sendJson(404, { error: 'SESSION_NOT_FOUND' });
+
+        const roster = this.rosterService.getRosterForSession(sessionId);
+        const checks = this.db.raw.prepare('SELECT id FROM participation_checks WHERE session_id = ?').all(sessionId) as any[];
+        const totalChecks = checks.length;
+
+        const headers = [
+          'Student Name',
+          'Duplicate Name',
+          'Joined At',
+          'Total Checks Conducted',
+          'Checks Responded',
+          'Checks Missed',
+          'Checks Excused (AFK)',
+          'Participation Rate (%)',
+          'AFK Breaks Consumed',
+          'Focus State',
+          'Connection Status'
+        ];
+
+        const rows: string[] = [headers.join(',')];
+
+        for (const guest of roster) {
+          const snapshots = this.db.raw.prepare(`
+            SELECT result FROM check_snapshots WHERE roster_guest_id = ?
+          `).all(guest.id) as any[];
+
+          let responded = 0;
+          let missed = 0;
+          let excused = 0;
+
+          for (const s of snapshots) {
+            if (s.result === 'RESPONDED') responded++;
+            else if (s.result === 'DID_NOT_RESPOND') missed++;
+            else if (s.result === 'EXCUSED_AFK') excused++;
+          }
+
+          const eligible = totalChecks - excused;
+          const ratePercent = eligible > 0 ? Math.round((responded / eligible) * 100) : 100;
+
+          const row = [
+            `"${guest.displayName.replace(/"/g, '""')}"`,
+            guest.isDuplicateName ? 'Yes' : 'No',
+            new Date(guest.joinedAt).toISOString(),
+            String(totalChecks),
+            String(responded),
+            String(missed),
+            String(excused),
+            `${ratePercent}%`,
+            String(guest.afkUsesConsumed),
+            guest.focusState,
+            guest.connectionStatus
+          ];
+          rows.push(row.join(','));
+        }
+
+        const csvContent = rows.join('\r\n');
+        const filename = `attendance-${session.meetingCode}-${new Date(session.startedAt).toISOString().split('T')[0]}.csv`;
+
+        res.writeHead(200, {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${filename}"`
+        });
+        res.end(csvContent);
+        return;
       }
 
       // 4. Trigger Participation Check: POST /api/v1/sessions/:id/checks
