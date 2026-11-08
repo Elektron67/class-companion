@@ -31,6 +31,18 @@ export class AppServer {
   private instructorSockets: Map<string, Set<WebSocket>> = new Map(); // sessionId -> Set<WebSocket>
   private studentSockets: Map<string, WebSocket> = new Map(); // guestToken -> WebSocket
   private heartbeatInterval?: NodeJS.Timeout;
+  private joinRateLimits: Map<string, { count: number; resetAt: number }> = new Map();
+
+  private isJoinRateLimited(ip: string): boolean {
+    const now = Date.now();
+    const entry = this.joinRateLimits.get(ip);
+    if (!entry || now > entry.resetAt) {
+      this.joinRateLimits.set(ip, { count: 1, resetAt: now + 60000 });
+      return false;
+    }
+    entry.count++;
+    return entry.count > 15;
+  }
 
   constructor(inMemoryDb = false) {
     this.db = new Database(inMemoryDb ? ':memory:' : DB_PATH);

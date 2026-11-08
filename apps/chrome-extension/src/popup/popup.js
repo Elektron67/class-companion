@@ -1,12 +1,16 @@
 // apps/chrome-extension/src/popup/popup.js
 
+const extAPI = (typeof chrome !== 'undefined' && chrome.runtime)
+  ? chrome
+  : (typeof browser !== 'undefined' ? browser : null);
+
 document.addEventListener('DOMContentLoaded', () => {
   const sessionStatus = document.getElementById('sessionStatus');
   const guestNameRow = document.getElementById('guestNameRow');
   const guestName = document.getElementById('guestName');
   const notesList = document.getElementById('notesList');
 
-  chrome.storage.local.get(['currentGuestSession', 'classNotes'], (data) => {
+  extAPI.storage.local.get(['currentGuestSession', 'classNotes'], (data) => {
     if (data.currentGuestSession) {
       sessionStatus.textContent = `Connected (${data.currentGuestSession.meetingCode})`;
       sessionStatus.style.color = '#34d399';

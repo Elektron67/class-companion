@@ -3,6 +3,11 @@
 (function () {
   console.log('[MeetMonitor] Content script initialized on Google Meet.');
 
+  // Cross-browser WebExtensions API polyfill (Firefox, Brave, Chrome, Edge)
+  const extAPI = (typeof chrome !== 'undefined' && chrome.runtime)
+    ? chrome
+    : (typeof browser !== 'undefined' ? browser : null);
+
   const API_BASE = 'http://localhost:4000';
   const WS_BASE = 'ws://localhost:4000';
 
@@ -399,8 +404,8 @@
     }
   });
 
-  // Check for existing session token in chrome.storage.local
-  chrome.storage.local.get(['currentGuestSession', 'classNotes'], (result) => {
+  // Check for existing session token in local storage
+  extAPI.storage.local.get(['currentGuestSession', 'classNotes'], (result) => {
     if (result.currentGuestSession && result.currentGuestSession.meetingCode === meetingCode) {
       console.log('[MeetMonitor] Found saved session token, attempting seamless reconnect...');
       fetch(`${API_BASE}/api/v1/sessions/join`, {
@@ -427,8 +432,8 @@
     currentSession = session;
     currentGuest = guest;
 
-    // Save to chrome.storage.local
-    chrome.storage.local.set({
+    // Save to local storage
+    extAPI.storage.local.set({
       currentGuestSession: {
         sessionId: session.id,
         joinCode: session.joinCode,
@@ -522,7 +527,7 @@
         try { swPort.disconnect(); } catch (e) {}
       }
 
-      swPort = chrome.runtime.connect({ name: 'meetmonitor-stream' });
+      swPort = extAPI.runtime.connect({ name: 'meetmonitor-stream' });
       swPort.postMessage({ action: 'CONNECT_WS', wsUrl: url });
 
       swPort.onMessage.addListener((msg) => {
@@ -599,7 +604,7 @@
 
     // If student is on another tab/window, trigger background desktop notification
     if (document.visibilityState === 'hidden' || !document.hasFocus()) {
-      chrome.runtime.sendMessage({
+      extAPI.runtime.sendMessage({
         action: 'TRIGGER_CHECK_NOTIFICATION',
         targetPhrase: payload.targetPhrase
       });
@@ -694,7 +699,7 @@
 
   // 12. Student Notes & Local PDF Export
   function loadSavedNotes(sessionId) {
-    chrome.storage.local.get(['classNotes'], (res) => {
+    extAPI.storage.local.get(['classNotes'], (res) => {
       if (res.classNotes && res.classNotes[sessionId]) {
         notesArea.value = res.classNotes[sessionId].markdownContent || '';
       }
@@ -707,7 +712,7 @@
 
     notesAutoSaveTimeout = setTimeout(() => {
       if (!currentSession) return;
-      chrome.storage.local.get(['classNotes'], (res) => {
+      extAPI.storage.local.get(['classNotes'], (res) => {
         const notes = res.classNotes || {};
         notes[currentSession.id] = {
           sessionId: currentSession.id,
@@ -717,7 +722,7 @@
           markdownContent: notesArea.value,
           lastSavedAt: Date.now()
         };
-        chrome.storage.local.set({ classNotes: notes }, () => {
+        extAPI.storage.local.set({ classNotes: notes }, () => {
           notesSaveStatus.textContent = 'Saved locally ●';
         });
       });

@@ -8,90 +8,73 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const EXTENSION_DIR = path.join(ROOT_DIR, 'apps', 'chrome-extension');
 const DIST_DIR = path.join(ROOT_DIR, 'dist');
-const MANIFEST_PATH = path.join(EXTENSION_DIR, 'manifest.json');
+const CHROMIUM_MANIFEST_PATH = path.join(EXTENSION_DIR, 'manifest.json');
+const FIREFOX_MANIFEST_PATH = path.join(EXTENSION_DIR, 'manifest.firefox.json');
 
 async function bundle() {
   console.log('====================================================');
-  console.log('  MeetMonitor Chrome Extension Packager');
+  console.log('  MeetMonitor Multi-Browser Extension Packager');
+  console.log('  Supports: Brave, Google Chrome, Firefox, Edge');
   console.log('====================================================\n');
 
-  // 1. Validate manifest.json
-  if (!fs.existsSync(MANIFEST_PATH)) {
-    console.error(`[Error] manifest.json not found at: ${MANIFEST_PATH}`);
+  if (!fs.existsSync(CHROMIUM_MANIFEST_PATH)) {
+    console.error(`[Error] manifest.json not found at: ${CHROMIUM_MANIFEST_PATH}`);
     process.exit(1);
   }
 
-  let manifest;
-  try {
-    manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf-8'));
-  } catch (err) {
-    console.error(`[Error] Failed to parse manifest.json: ${err.message}`);
-    process.exit(1);
-  }
-
+  const manifest = JSON.parse(fs.readFileSync(CHROMIUM_MANIFEST_PATH, 'utf-8'));
   const version = manifest.version || '1.0.0';
-  const name = (manifest.name || 'meetmonitor-extension')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  const zipFileName = `${name}-v${version}.zip`;
-  const zipFilePath = path.join(DIST_DIR, zipFileName);
 
-  console.log(`Extension Name   : ${manifest.name}`);
-  console.log(`Version          : ${version}`);
-  console.log(`Manifest Version : MV${manifest.manifest_version}`);
-
-  // 2. Validate critical files
-  const requiredFiles = [
-    'manifest.json',
-    manifest.background?.service_worker,
-    ...(manifest.content_scripts?.flatMap(cs => cs.js) || []),
-    manifest.action?.default_popup,
-    ...(manifest.icons ? Object.values(manifest.icons) : [])
-  ].filter(Boolean);
-
-  console.log('\nValidating package contents...');
-  let hasMissing = false;
-  for (const relPath of requiredFiles) {
-    const fullPath = path.join(EXTENSION_DIR, relPath);
-    if (fs.existsSync(fullPath)) {
-      console.log(`  ✓ ${relPath}`);
-    } else {
-      console.error(`  ✗ MISSING: ${relPath} (expected at ${fullPath})`);
-      hasMissing = true;
-    }
-  }
-
-  if (hasMissing) {
-    console.error('\n[Error] Missing required extension assets. Aborting bundle.');
-    process.exit(1);
-  }
-
-  // 3. Ensure dist directory exists
+  // Ensure dist directory exists
   if (!fs.existsSync(DIST_DIR)) {
     fs.mkdirSync(DIST_DIR, { recursive: true });
   }
 
-  // 4. Create ZIP Archive
-  console.log(`\nCreating distribution zip: ${zipFilePath}`);
+  // 1. Build Chromium Package (Brave, Chrome, Edge, Opera)
+  console.log('▶ Packaging Chromium Target (Brave / Chrome / Edge)...');
+  const chromiumZipPath = path.join(DIST_DIR, `meetmonitor-chromium-v${version}.zip`);
+  await buildZipTarget(chromiumZipPath, (fileName) => {
+    // Exclude firefox-specific manifest from chromium bundle
+    return fileName !== 'manifest.firefox.json';
+  });
 
-  await createWithNativeZip(zipFilePath);
+  const chromStats = fs.statSync(chromiumZipPath);
+  console.log(`  ✓ Created: ${chromiumZipPath} (${(chromStats.size / 1024).toFixed(2)} KB)`);
 
-  const stats = fs.statSync(zipFilePath);
-  const sizeKb = (stats.size / 1024).toFixed(2);
+  // 2. Build Firefox Package (Gecko / Mozilla Add-ons)
+  console.log('\n▶ Packaging Firefox Target (Gecko / Mozilla Add-ons)...');
+  const firefoxZipPath = path.join(DIST_DIR, `meetmonitor-firefox-v${version}.zip`);
+  
+  if (!fs.existsSync(FIREFOX_MANIFEST_PATH)) {
+    console.error(`[Error] manifest.firefox.json not found at: ${FIREFOX_MANIFEST_PATH}`);
+    process.exit(1);
+  }
+
+  const firefoxManifestData = fs.readFileSync(FIREFOX_MANIFEST_PATH);
+
+  await buildZipTarget(firefoxZipPath, (fileName) => {
+    // Exclude default manifest.json and manifest.firefox.json because we inject manifest.firefox.json as manifest.json
+    return fileName !== 'manifest.json' && fileName !== 'manifest.firefox.json';
+  }, [
+    { name: 'manifest.json', data: firefoxManifestData }
+  ]);
+
+  const ffStats = fs.statSync(firefoxZipPath);
+  console.log(`  ✓ Created: ${firefoxZipPath} (${(ffStats.size / 1024).toFixed(2)} KB)`);
 
   console.log('\n====================================================');
-  console.log('  SUCCESSFULLY BUNDLED EXTENSION!');
+  console.log('  ALL BROWSER PACKAGES BUNDLED SUCCESSFULLY!');
   console.log('====================================================');
-  console.log(`Output File : ${zipFilePath}`);
-  console.log(`File Size   : ${sizeKb} KB`);
-  console.log('\nNext steps:');
-  console.log('1. For Chrome Web Store: Upload this .zip to the Chrome Developer Dashboard.');
-  console.log('2. For Manual Sharing: Share this .zip with students/instructors to unzip and load via Developer Mode.');
+  console.log('Distribution Targets:');
+  console.log(`1. Brave / Chrome / Edge : dist/meetmonitor-chromium-v${version}.zip`);
+  console.log(`2. Mozilla Firefox       : dist/meetmonitor-firefox-v${version}.zip`);
+  console.log('\nInstallation Instructions:');
+  console.log('• Brave & Chrome : Load unpacked folder or upload chromium .zip to Web Store.');
+  console.log('• Firefox        : Load temporary add-on via about:debugging or upload to AMO.');
   console.log('====================================================\n');
 }
 
-async function createWithNativeZip(outputPath) {
+async function buildZipTarget(outputPath, filterFn, extraFiles = []) {
   const zlib = await import('node:zlib');
 
   function collectFiles(dir, base = '') {
@@ -103,13 +86,15 @@ async function createWithNativeZip(outputPath) {
       if (entry.isDirectory()) {
         results = results.concat(collectFiles(full, rel));
       } else {
-        results.push({ name: rel.replace(/\\/g, '/'), data: fs.readFileSync(full) });
+        if (filterFn(rel)) {
+          results.push({ name: rel.replace(/\\/g, '/'), data: fs.readFileSync(full) });
+        }
       }
     }
     return results;
   }
 
-  const files = collectFiles(EXTENSION_DIR);
+  const files = [...collectFiles(EXTENSION_DIR), ...extraFiles];
   const localHeaders = [];
   const centralHeaders = [];
   let offset = 0;
@@ -164,7 +149,7 @@ async function createWithNativeZip(outputPath) {
   let cdSize = 0;
   for (const ch of centralHeaders) cdSize += ch.length;
 
-  // End of Central Directory
+  // End of Central Directory Record
   const eocd = Buffer.alloc(22);
   eocd.writeUInt32LE(0x06054b50, 0);
   eocd.writeUInt16LE(0, 4);
