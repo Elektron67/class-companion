@@ -450,6 +450,7 @@
     loadSavedNotes(session.id);
     initWebSocket(guest.guestToken);
     initTelemetry();
+    initCallObserver();
   }
 
   // 8. WebSocket Connection with Service Worker CSP-Immunity Fallback
@@ -564,7 +565,57 @@
     }
   }
 
-  // 9. Telemetry & Focus Monitoring
+  // 9. Resilient Google Meet In-Call State Detector
+  function detectMeetCallState() {
+    const textContent = document.body ? document.body.innerText || '' : '';
+
+    // Post-call exit screen heuristic
+    if (
+      textContent.includes('You left the meeting') ||
+      textContent.includes('You were removed from the meeting') ||
+      textContent.includes('Return to home screen')
+    ) {
+      return 'LEFT_CALL';
+    }
+
+    // In-Call heuristic (Leave Call button or participant videos)
+    const leaveButton = document.querySelector(
+      'button[aria-label*="Leave call" i], button[data-tooltip*="Leave call" i], button[aria-label*="leave" i]'
+    );
+    if (leaveButton) {
+      return 'IN_CALL';
+    }
+
+    const inCallVideos = document.querySelectorAll('video');
+    if (inCallVideos.length > 1) {
+      return 'IN_CALL';
+    }
+
+    // Lobby / Pre-join heuristic
+    const joinButton = document.querySelector(
+      'button[aria-label*="Join now" i], button[aria-label*="Ask to join" i], button[data-tooltip*="Join now" i]'
+    );
+    if (joinButton || textContent.includes('Ready to join?')) {
+      return 'LOBBY';
+    }
+
+    // Fallback: If URL matches standard Meet room, assume IN_CALL so participation checks remain active
+    return 'IN_CALL';
+  }
+
+  let callObserver = null;
+  function initCallObserver() {
+    if (document.body && !callObserver) {
+      callObserver = new MutationObserver(() => {
+        sendTelemetry();
+      });
+      callObserver.observe(document.body, { childList: true, subtree: true });
+    }
+  }
+
+  // 10. Telemetry & Focus Monitoring
+  let lastCallState = 'UNKNOWN';
+
   function initTelemetry() {
     document.addEventListener('visibilitychange', () => sendTelemetry());
     window.addEventListener('focus', () => sendTelemetry());
@@ -579,11 +630,31 @@
       focusState = 'UNFOCUSED';
     }
 
+    const callState = detectMeetCallState();
+    const inCall = callState === 'IN_CALL';
+
+    if (callState !== lastCallState) {
+      lastCallState = callState;
+      if (currentSession) {
+        if (callState === 'LEFT_CALL') {
+          dockLabel.textContent = `${currentSession.title} (Call Ended)`;
+          dockDot.classList.remove('active');
+        } else if (callState === 'LOBBY') {
+          dockLabel.textContent = `${currentSession.title} (In Lobby)`;
+          dockDot.classList.add('active');
+        } else {
+          dockLabel.textContent = `${currentSession.title} (Connected)`;
+          dockDot.classList.add('active');
+        }
+      }
+    }
+
     sendWsMessage({
       type: 'telemetry:update',
       payload: {
         focusState,
-        inCall: true,
+        callState,
+        inCall,
         clientTimestamp: Date.now()
       }
     });

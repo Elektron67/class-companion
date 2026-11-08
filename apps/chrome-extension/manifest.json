@@ -34,5 +34,11 @@
       "16": "icons/icon16.png",
       "48": "icons/icon48.png"
     }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "meetmonitor@project-cephalon.local",
+      "strict_min_version": "121.0"
+    }
   }
 }
