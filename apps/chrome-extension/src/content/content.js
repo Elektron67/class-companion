@@ -11,7 +11,7 @@
   // Derive server URLs (configurable via config.js or customServerUrl in storage)
   const defaultUrl = (window.MEETMONITOR_CONFIG && window.MEETMONITOR_CONFIG.SERVER_URL)
     ? window.MEETMONITOR_CONFIG.SERVER_URL
-    : 'http://localhost:4000';
+    : 'https://class-companion-56q5.onrender.com/';
 
   let API_BASE = defaultUrl.replace(/\/+$/, '');
   let WS_BASE = API_BASE.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
@@ -439,13 +439,13 @@
           guestToken: result.currentGuestSession.guestToken
         })
       })
-      .then(res => res.json())
-      .then(data => {
-        if (data.guest) {
-          onJoinedSession(data.session, data.guest);
-        }
-      })
-      .catch(() => {});
+        .then(res => res.json())
+        .then(data => {
+          if (data.guest) {
+            onJoinedSession(data.session, data.guest);
+          }
+        })
+        .catch(() => { });
     }
   });
 
@@ -517,11 +517,11 @@
 
     function closeActiveConnection() {
       if (socket) {
-        try { socket.close(); } catch (e) {}
+        try { socket.close(); } catch (e) { }
         socket = null;
       }
       if (swPort) {
-        try { swPort.postMessage({ action: 'CLOSE_WS' }); } catch (e) {}
+        try { swPort.postMessage({ action: 'CLOSE_WS' }); } catch (e) { }
         swPort.disconnect();
         swPort = null;
       }
@@ -557,7 +557,7 @@
 
     function connectViaServiceWorker(url) {
       if (swPort) {
-        try { swPort.disconnect(); } catch (e) {}
+        try { swPort.disconnect(); } catch (e) { }
       }
 
       swPort = extAPI.runtime.connect({ name: 'meetmonitor-stream' });
