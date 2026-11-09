@@ -13,7 +13,7 @@
     "http://localhost:4000/*",
     "http://127.0.0.1:4000/*",
     "https://*/*",
-    "https://class-companion-56q5.onrender.com/"
+    "https://class-companion-56q5.onrender.com/*"
   ],
   "icons": {
     "16": "icons/icon16.png",

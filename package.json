@@ -13,6 +13,7 @@
     "bundle:extension": "node scripts/bundle-extension.js"
   },
   "dependencies": {
+    "sqlite3": "^6.0.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
