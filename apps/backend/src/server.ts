@@ -687,12 +687,22 @@ export class AppServer {
 }
 
 // Self-starting when executed directly
-if (process.argv[1] && process.argv[1].endsWith('server.ts')) {
+const isDirectRun = Boolean(
+  process.argv[1] && (
+    process.argv[1].endsWith('server.ts') ||
+    process.argv[1].endsWith('server.js') ||
+    process.env.RENDER ||
+    process.env.NODE_ENV === 'production'
+  )
+);
+
+if (isDirectRun) {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
+  const host = '0.0.0.0';
   const app = new AppServer();
-  app.server.listen(port, () => {
-    console.log(`[MeetMonitor API & WebSocket Gateway] Running on http://localhost:${port}`);
-    console.log(`[Instructor Dashboard] Accessible on http://localhost:${port}`);
+  app.server.listen(port, host, () => {
+    console.log(`[MeetMonitor API & WebSocket Gateway] Running on http://${host}:${port}`);
+    console.log(`[Instructor Dashboard] Accessible on http://${host}:${port}`);
   });
 }
 

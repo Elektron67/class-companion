@@ -22,11 +22,7 @@
     WS_BASE = API_BASE.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
   }
 
-  extAPI.storage.local.get(['customServerUrl'], (res) => {
-    if (res.customServerUrl) {
-      updateServerEndpoint(res.customServerUrl);
-    }
-  });
+  extAPI.storage.local.remove('customServerUrl');
 
   // 1. Extract and validate Google Meet meeting code (xxx-yyyy-zzz)
   function getMeetingCode() {
