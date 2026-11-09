@@ -7,13 +7,12 @@
     "node": ">=22.6.0"
   },
   "scripts": {
-    "start": "node --experimental-strip-types apps/backend/src/server.ts",
-    "start:backend": "node --experimental-strip-types apps/backend/src/server.ts",
-    "test": "node --test --experimental-strip-types packages/string-normalizer/tests/normalizer.test.ts apps/backend/tests/*.test.ts",
+    "start": "node --experimental-sqlite --experimental-strip-types apps/backend/src/server.ts",
+    "start:backend": "node --experimental-sqlite --experimental-strip-types apps/backend/src/server.ts",
+    "test": "node --experimental-sqlite --test --experimental-strip-types packages/string-normalizer/tests/normalizer.test.ts apps/backend/tests/*.test.ts",
     "bundle:extension": "node scripts/bundle-extension.js"
   },
   "dependencies": {
-    "sqlite3": "^6.0.1",
     "ws": "^8.18.0"
   },
   "devDependencies": {
