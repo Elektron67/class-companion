@@ -33,6 +33,17 @@ async function bundle() {
   const zipFileName = `meetmonitor-extension-v${version}.zip`;
   const zipFilePath = path.join(DIST_DIR, zipFileName);
 
+  // Optional server URL override (e.g. node scripts/bundle-extension.js --url=https://xyz.ngrok-free.app)
+  const serverUrlArg = process.argv.find(a => a.startsWith('--url='))?.slice(6) || process.env.SERVER_URL;
+  if (serverUrlArg) {
+    const cleanUrl = serverUrlArg.trim().replace(/\/+$/, '');
+    const configPath = path.join(EXTENSION_DIR, 'src', 'config.js');
+    console.log(`Target Backend URL: ${cleanUrl}`);
+    fs.writeFileSync(configPath, `// MeetMonitor backend server URL (configured at bundle time)\nwindow.MEETMONITOR_CONFIG = {\n  SERVER_URL: '${cleanUrl}'\n};\n`);
+  } else {
+    console.log('Target Backend URL: http://localhost:4000 (Default)');
+  }
+
   console.log(`Extension Name   : ${manifest.name}`);
   console.log(`Version          : ${version}`);
   console.log(`Manifest Version : MV${manifest.manifest_version}`);

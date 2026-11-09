@@ -64,6 +64,21 @@
     <div style="padding:12px; color:#94a3b8; font-size:11px;">No saved notes yet. Notes taken in class will appear here.</div>
   </div>
 
+  <div style="margin-top:14px; border-top:1px solid #334155; padding-top:10px;">
+    <details style="font-size:11px; color:#94a3b8; cursor:pointer;">
+      <summary>⚙️ Server Settings</summary>
+      <div style="margin-top:8px;">
+        <label style="display:block; margin-bottom:4px; font-size:10px;">Backend Server URL:</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="inputServerUrl" placeholder="http://localhost:4000" style="flex:1; background:#1e293b; border:1px solid #334155; color:#f8fafc; padding:4px 6px; border-radius:4px; font-size:10px;" />
+          <button id="btnSaveServerUrl" class="btn" style="padding:4px 8px; font-size:10px;">Save</button>
+        </div>
+        <div id="serverUrlSaveMsg" style="font-size:10px; color:#10b981; margin-top:4px; display:none;">Saved!</div>
+      </div>
+    </details>
+  </div>
+
+  <script src="../config.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

@@ -80,6 +80,10 @@
   });
 
   function setupActiveSession(session) {
+    resetCheckUI();
+    rosterTableBody.innerHTML = '';
+    rosterCount.textContent = '0';
+
     createSessionView.classList.add('hidden');
     sessionEndedView.classList.add('hidden');
     activeDashboardView.classList.remove('hidden');
@@ -105,17 +109,25 @@
 
   // 2. Real-Time WebSocket Connection
   function connectWebSocket(sessionId) {
-    if (socket) socket.close();
+    if (socket) {
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.close();
+      socket = null;
+    }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws?role=instructor&sessionId=${sessionId}`;
-    socket = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl);
+    socket = ws;
 
-    socket.onopen = () => {
-      console.log('[Dashboard] WebSocket connected.');
+    ws.onopen = () => {
+      if (socket !== ws) return;
+      console.log('[Dashboard] WebSocket connected for session:', sessionId);
     };
 
-    socket.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (socket !== ws) return;
       try {
         const msg = JSON.parse(event.data);
         if (msg.event === 'roster:update') {
@@ -132,10 +144,11 @@
       }
     };
 
-    socket.onclose = () => {
+    ws.onclose = () => {
+      if (socket !== ws) return;
       console.warn('[Dashboard] WebSocket disconnected. Reconnecting in 3s...');
       setTimeout(() => {
-        if (activeSession && activeSession.status !== 'ENDED') {
+        if (socket === ws && activeSession && activeSession.id === sessionId && activeSession.status !== 'ENDED') {
           connectWebSocket(sessionId);
         }
       }, 3000);
@@ -379,8 +392,50 @@
     if (summaryTotalStudents) summaryTotalStudents.textContent = rosterCount.textContent;
   }
 
+  function resetCheckUI() {
+    if (activeCountdownTimer) {
+      clearInterval(activeCountdownTimer);
+      activeCountdownTimer = null;
+    }
+    checkProgressBanner.classList.add('hidden');
+    displayActivePhrase.textContent = '"---"';
+    checkTimerCountdown.textContent = '20s';
+    checkTimerStatus.textContent = 'WINDOW OPEN';
+    checkTimerStatus.style.background = 'var(--warning)';
+
+    inputTargetPhrase.value = '';
+    btnTriggerCheck.disabled = false;
+    btnTriggerCheck.textContent = 'Trigger 20s Check';
+
+    statResponded.textContent = '0';
+    statPending.textContent = '0';
+    statExcused.textContent = '0';
+    statDidNotRespond.textContent = '0';
+    statSnapshotTotal.textContent = '0';
+
+    mathSnap.textContent = '0';
+    mathResp.textContent = '0';
+    mathMiss.textContent = '0';
+    mathExc.textContent = '0';
+
+    nonRespondersPanel.classList.add('hidden');
+    nonRespondersList.innerHTML = '';
+    btnToggleNonResponders.textContent = 'Reveal Non-Responders';
+    nonRespondersRevealed = false;
+  }
+
   btnNewSession.addEventListener('click', () => {
+    if (socket) {
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.close();
+      socket = null;
+    }
     activeSession = null;
+    resetCheckUI();
+    rosterTableBody.innerHTML = '';
+    rosterCount.textContent = '0';
+
     sessionEndedView.classList.add('hidden');
     createSessionView.classList.remove('hidden');
     inputTitle.value = '';

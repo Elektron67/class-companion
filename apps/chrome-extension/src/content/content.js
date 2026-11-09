@@ -8,8 +8,25 @@
     ? chrome
     : (typeof browser !== 'undefined' ? browser : null);
 
-  const API_BASE = 'http://localhost:4000';
-  const WS_BASE = 'ws://localhost:4000';
+  // Derive server URLs (configurable via config.js or customServerUrl in storage)
+  const defaultUrl = (window.MEETMONITOR_CONFIG && window.MEETMONITOR_CONFIG.SERVER_URL)
+    ? window.MEETMONITOR_CONFIG.SERVER_URL
+    : 'http://localhost:4000';
+
+  let API_BASE = defaultUrl.replace(/\/+$/, '');
+  let WS_BASE = API_BASE.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+
+  function updateServerEndpoint(url) {
+    if (!url) return;
+    API_BASE = url.replace(/\/+$/, '');
+    WS_BASE = API_BASE.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+  }
+
+  extAPI.storage.local.get(['customServerUrl'], (res) => {
+    if (res.customServerUrl) {
+      updateServerEndpoint(res.customServerUrl);
+    }
+  });
 
   // 1. Extract and validate Google Meet meeting code (xxx-yyyy-zzz)
   function getMeetingCode() {
@@ -30,6 +47,8 @@
   let heartbeatTimer = null;
   let activeCheck = null;
   let checkCountdownInterval = null;
+  let activeCheckDismissTimeout = null;
+  let isAfkActive = false;
   let notesAutoSaveTimeout = null;
 
   // 3. Mount Shadow DOM container for complete style isolation
@@ -243,7 +262,7 @@
       <div class="modal-card">
         <div class="modal-header">
           <h3>Join Monitored Class Session</h3>
-          <p>Meeting: <strong>${meetingCode}</strong></p>
+          <p>Meeting: <strong id="meetingCodeDisplay"></strong></p>
         </div>
         <div id="joinError" class="error-banner hidden"></div>
         <form id="joinForm">
@@ -304,6 +323,8 @@
   shadow.appendChild(uiContainer);
 
   // Elements inside shadow DOM
+  const meetingCodeDisplay = shadow.getElementById('meetingCodeDisplay');
+  if (meetingCodeDisplay) meetingCodeDisplay.textContent = meetingCode;
   const dockPill = shadow.getElementById('dockPill');
   const dockDot = shadow.getElementById('dockDot');
   const dockLabel = shadow.getElementById('dockLabel');
@@ -431,6 +452,17 @@
   function onJoinedSession(session, guest) {
     currentSession = session;
     currentGuest = guest;
+    isAfkActive = Boolean(guest.afkExpiresAt && guest.afkExpiresAt > Date.now());
+
+    if (isAfkActive) {
+      btnToggleAfk.textContent = "I'm Back";
+      btnToggleAfk.style.background = '#10b981';
+      afkLabel.textContent = 'AFK Active (5m max)';
+    } else {
+      btnToggleAfk.textContent = 'Take AFK Break';
+      btnToggleAfk.style.background = '#f59e0b';
+      afkLabel.textContent = `AFK: ${3 - (guest.afkUsesConsumed || 0)} breaks left`;
+    }
 
     // Save to local storage
     extAPI.storage.local.set({
@@ -604,10 +636,13 @@
   }
 
   let callObserver = null;
+  let telemetryDebounceTimer = null;
+
   function initCallObserver() {
     if (document.body && !callObserver) {
       callObserver = new MutationObserver(() => {
-        sendTelemetry();
+        if (telemetryDebounceTimer) clearTimeout(telemetryDebounceTimer);
+        telemetryDebounceTimer = setTimeout(() => sendTelemetry(), 1000);
       });
       callObserver.observe(document.body, { childList: true, subtree: true });
     }
@@ -615,6 +650,8 @@
 
   // 10. Telemetry & Focus Monitoring
   let lastCallState = 'UNKNOWN';
+  let lastFocusState = null;
+  let lastTelemetryTime = 0;
 
   function initTelemetry() {
     document.addEventListener('visibilitychange', () => sendTelemetry());
@@ -622,7 +659,7 @@
     window.addEventListener('blur', () => sendTelemetry());
   }
 
-  function sendTelemetry() {
+  function sendTelemetry(force = false) {
     let focusState = 'FOCUSED';
     if (document.visibilityState === 'hidden') {
       focusState = 'HIDDEN';
@@ -632,6 +669,15 @@
 
     const callState = detectMeetCallState();
     const inCall = callState === 'IN_CALL';
+    const now = Date.now();
+
+    const stateChanged = focusState !== lastFocusState || callState !== lastCallState;
+    if (!force && !stateChanged && (now - lastTelemetryTime < 3000)) {
+      return;
+    }
+
+    lastFocusState = focusState;
+    lastTelemetryTime = now;
 
     if (callState !== lastCallState) {
       lastCallState = callState;
@@ -655,7 +701,7 @@
         focusState,
         callState,
         inCall,
-        clientTimestamp: Date.now()
+        clientTimestamp: now
       }
     });
   }
@@ -663,11 +709,38 @@
   // 10. Participation Check Execution
   function handleCheckStarted(payload) {
     activeCheck = payload;
+    if (activeCheckDismissTimeout) {
+      clearTimeout(activeCheckDismissTimeout);
+      activeCheckDismissTimeout = null;
+    }
+
+    if (isAfkActive) {
+      // Student is currently on AFK break and automatically excused
+      checkTargetPhrase.textContent = 'Excused (AFK Break Active)';
+      inputCheckAnswer.value = '';
+      inputCheckAnswer.placeholder = 'You are currently on AFK break and excused from this check.';
+      inputCheckAnswer.disabled = true;
+      btnSubmitAnswer.disabled = true;
+      btnSubmitAnswer.textContent = 'Excused (AFK)';
+      btnSubmitAnswer.style.background = '#10b981';
+      checkErrorBanner.classList.add('hidden');
+      checkModal.classList.remove('hidden');
+
+      // Auto-close after 3 seconds so it does not block the screen
+      activeCheckDismissTimeout = setTimeout(() => {
+        checkModal.classList.add('hidden');
+        activeCheck = null;
+      }, 3000);
+      return;
+    }
+
     checkTargetPhrase.textContent = payload.targetPhrase;
     inputCheckAnswer.value = '';
+    inputCheckAnswer.placeholder = 'Type target phrase here...';
     inputCheckAnswer.disabled = false;
     btnSubmitAnswer.disabled = false;
     btnSubmitAnswer.textContent = 'Submit Response (Enter)';
+    btnSubmitAnswer.style.background = '';
     checkErrorBanner.classList.add('hidden');
     checkModal.classList.remove('hidden');
 
@@ -694,6 +767,15 @@
         inputCheckAnswer.disabled = true;
         btnSubmitAnswer.disabled = true;
         btnSubmitAnswer.textContent = 'Time Expired';
+        btnSubmitAnswer.style.background = '#64748b';
+
+        // Auto-close modal when timer runs out and student didn't respond
+        if (!activeCheckDismissTimeout) {
+          activeCheckDismissTimeout = setTimeout(() => {
+            checkModal.classList.add('hidden');
+            activeCheck = null;
+          }, 1500);
+        }
       }
     }
     updateCountdown();
@@ -725,6 +807,7 @@
       checkErrorBanner.classList.add('hidden');
       setTimeout(() => {
         checkModal.classList.add('hidden');
+        activeCheck = null;
       }, 1500);
     } else if (payload.status === 'INCORRECT') {
       checkErrorBanner.textContent = payload.message || 'Incorrect match. Check spelling and retry.';
@@ -734,10 +817,17 @@
       checkCard.classList.add('shake');
       inputCheckAnswer.select();
     } else if (payload.status === 'EXPIRED') {
+      if (checkCountdownInterval) clearInterval(checkCountdownInterval);
       checkErrorBanner.textContent = 'Time has expired. Response was not recorded.';
       checkErrorBanner.classList.remove('hidden');
       inputCheckAnswer.disabled = true;
       btnSubmitAnswer.disabled = true;
+      btnSubmitAnswer.textContent = 'Time Expired';
+      btnSubmitAnswer.style.background = '#64748b';
+      setTimeout(() => {
+        checkModal.classList.add('hidden');
+        activeCheck = null;
+      }, 1500);
     }
   }
 
@@ -754,6 +844,7 @@
 
   function handleAfkAck(payload) {
     if (payload.success) {
+      isAfkActive = Boolean(payload.isActive);
       if (payload.isActive) {
         btnToggleAfk.textContent = "I'm Back";
         btnToggleAfk.style.background = '#10b981';
@@ -820,36 +911,40 @@
       return;
     }
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>${title} - Notes</title>
-        <style>
-          @page { size: A4; margin: 20mm; }
-          body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: #111; line-height: 1.6; }
-          header { border-bottom: 2px solid #3b82f6; padding-bottom: 12px; margin-bottom: 24px; }
-          h1 { margin: 0 0 6px 0; font-size: 22px; color: #1e3a8a; }
-          .meta { font-size: 12px; color: #64748b; }
-          .content { font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
-          footer { position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 10px; color: #94a3b8; }
-        </style>
-      </head>
-      <body>
-        <header>
-          <h1>${title}</h1>
-          <div class="meta">Date: ${dateStr} | Meeting: meet.google.com/${meetingCode}</div>
-        </header>
-        <div class="content">${escapeHtml(content)}</div>
-        <script>
-          window.onload = function() {
-            window.print();
-          };
-        <\/script>
-      </body>
-      </html>
-    `);
-    printWindow.document.close();
+    const doc = printWindow.document;
+    doc.title = `${title} - Notes`;
+
+    const style = doc.createElement('style');
+    style.textContent = `
+      @page { size: A4; margin: 20mm; }
+      body { font-family: "Helvetica Neue", Helvetica, Arial, sans-serif; color: #111; line-height: 1.6; }
+      header { border-bottom: 2px solid #3b82f6; padding-bottom: 12px; margin-bottom: 24px; }
+      h1 { margin: 0 0 6px 0; font-size: 22px; color: #1e3a8a; }
+      .meta { font-size: 12px; color: #64748b; }
+      .content { font-size: 14px; white-space: pre-wrap; word-wrap: break-word; }
+      footer { position: fixed; bottom: 0; width: 100%; text-align: center; font-size: 10px; color: #94a3b8; }
+    `;
+    doc.head.appendChild(style);
+
+    const header = doc.createElement('header');
+    const h1 = doc.createElement('h1');
+    h1.textContent = title;
+    const meta = doc.createElement('div');
+    meta.className = 'meta';
+    meta.textContent = `Date: ${dateStr} | Meeting: meet.google.com/${meetingCode}`;
+    header.appendChild(h1);
+    header.appendChild(meta);
+
+    const contentDiv = doc.createElement('div');
+    contentDiv.className = 'content';
+    contentDiv.textContent = content;
+
+    doc.body.appendChild(header);
+    doc.body.appendChild(contentDiv);
+
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
   });
 
   function escapeHtml(str) {

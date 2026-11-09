@@ -10,7 +10,9 @@
   ],
   "host_permissions": [
     "https://meet.google.com/*",
-    "http://localhost:4000/*"
+    "http://localhost:4000/*",
+    "http://127.0.0.1:4000/*",
+    "https://*/*"
   ],
   "icons": {
     "16": "icons/icon16.png",
@@ -18,12 +20,13 @@
     "128": "icons/icon128.png"
   },
   "background": {
-    "service_worker": "src/background/service-worker.js"
+    "service_worker": "src/background/service-worker.js",
+    "scripts": ["src/background/service-worker.js"]
   },
   "content_scripts": [
     {
       "matches": ["https://meet.google.com/*"],
-      "js": ["src/content/content.js"],
+      "js": ["src/config.js", "src/content/content.js"],
       "run_at": "document_idle"
     }
   ],
@@ -38,7 +41,10 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "meetmonitor@project-cephalon.local",
-      "strict_min_version": "121.0"
+      "strict_min_version": "121.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
     }
   }
 }
